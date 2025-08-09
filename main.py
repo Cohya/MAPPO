@@ -3,7 +3,8 @@ Minimal MAPPO (shared policy) for PettingZoo pursuit_v4 (parallel API).
 Focus: MAPPO logic (masking, centralized critic, per-agent adv norm, separate LRs).
 Run: python mappo_pursuit.py
 """
-
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='TRUE'
 import numpy as np
 import torch
 import torch.nn as nn
@@ -13,7 +14,7 @@ from pettingzoo.sisl import pursuit_v4
 import supersuit as ss
 from collections import deque
 import time
-
+import matplotlib.pyplot as plt 
 # ---------------------------
 # Hyperparams (tune as needed)
 # ---------------------------
@@ -172,6 +173,8 @@ def train():
     # track alive status per agent (1 active, 0 inactive)
     agent_alive = {a: 1 for a in agent_list}
     accumulated_reward = {a: 0 for a in agent_list}
+
+    avg_return_vec = []
     for update in range(1, NUM_UPDATES + 1):
         # Collect rollouts
         buffer.reset()
@@ -397,7 +400,24 @@ def train():
 
             print(f"Update {update}/{NUM_UPDATES}, steps {total_steps}, avg_return {avg_return:.3f}, elapsed {elapsed:.1f}s")
 
-    print("Training finished.")
+            avg_return_vec.append((update,avg_return.item()))
 
+    print("Training finished.")
+    ## Save avg_retuurn ###
+# Plot training results
+    try:
+        x, y = zip(*avg_return_vec)
+        plt.figure(figsize=(10, 6))  # Set figure size
+        plt.plot(x, y, 'b-', label='Average Return')  # Add line style and label
+        plt.xlabel("Update", fontsize=12)
+        plt.ylabel("Average Return", fontsize=12)
+        plt.title("Training Progress", fontsize=14)
+        plt.grid(True, linestyle='--', alpha=0.7)  # Add grid
+        plt.legend()
+        plt.tight_layout()  # Adjust layout
+        plt.savefig("avg_return.png", dpi=300, bbox_inches='tight')  # Higher resolution
+        plt.close()
+    except Exception as e:
+        print(f"Error plotting results: {e}")
 if __name__ == "__main__":
     train()
