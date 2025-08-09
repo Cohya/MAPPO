@@ -12,7 +12,9 @@ env = ss.color_reduction_v0(env, mode='B')  # Simplify observations (optional)
 env = ss.resize_v1(env, x_size=32, y_size=32)  # Resize obs (optional)
 env = ss.frame_stack_v1(env, 3)  # Stack frames (optional)
 observations = env.reset()
-
+print("Number of agents:", env.num_agents)
+print("Observation shape:", env.observation_space(env.agents[0]).shape)
+print("Action space:", env.action_space(env.agents[0]))
 print("Agents:", env.agents)
 
 for step in range(100):  # Run for 100 steps
