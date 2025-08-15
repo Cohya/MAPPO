@@ -15,11 +15,18 @@ import supersuit as ss
 from collections import deque
 import time
 import matplotlib.pyplot as plt 
+import imageio
+
+from pettingzoo.sisl import pursuit_v4
+import supersuit as ss
+import pettingzoo
+
+
 # ---------------------------
 # Hyperparams (tune as needed)
 # ---------------------------
 NUM_STEPS = 128        # rollout length
-NUM_UPDATES = 1000
+NUM_UPDATES = 5000
 NUM_EPOCHS = 4
 MINI_BATCHES = 4
 GAMMA = 0.99
@@ -30,6 +37,14 @@ CRITIC_LR = 1e-3
 HIDDEN = 128
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LOG_INTERVAL = 10
+CHECKPOINTFOLDER = "checkpoint_folder"
+
+# ---------------
+# For  video 
+#---------------
+import supersuit as ss
+
+
 
 # ---------------------------
 # Networks
@@ -143,7 +158,7 @@ def train():
 
 
     env = ss.color_reduction_v0(env, mode='B')  # Simplify observations (optional)
-    env = ss.resize_v1(env, x_size=16, y_size=16)  # Resize obs (optional)
+    # env = ss.resize_v1(env, x_size=16, y_size=16)  # Resize obs (optional) ---> this resize the observation dims 
     env = ss.frame_stack_v1(env, 3)  # Stack frames (optional)
     obs_dict = env.reset()
     agent_list = env.agents[:]  # e.g. ['pursuer_0'...]
@@ -175,6 +190,7 @@ def train():
     accumulated_reward = {a: 0 for a in agent_list}
 
     avg_return_vec = []
+    # create_manual_video(actor=actor, episode_num=0)
     for update in range(1, NUM_UPDATES + 1):
         # Collect rollouts
         buffer.reset()
@@ -402,6 +418,17 @@ def train():
 
             avg_return_vec.append((update,avg_return.item()))
 
+            ## Save network parameters 
+            if os.path.exists(CHECKPOINTFOLDER) == False:
+                os.makedirs(CHECKPOINTFOLDER)
+
+            torch.save(actor.state_dict(), os.path.join(CHECKPOINTFOLDER,f"actor_{update}.pth"))
+            torch.save(critic.state_dict(), os.path.join(CHECKPOINTFOLDER,f"critic_{update}.pth"))
+
+
+            ######### Create video
+            # create_manual_video(actor=actor, episode_num=update)
+
     print("Training finished.")
     ## Save avg_retuurn ###
 # Plot training results
@@ -419,5 +446,64 @@ def train():
         plt.close()
     except Exception as e:
         print(f"Error plotting results: {e}")
+
+
+def flatten_obs(obs):
+    num_agents = len(obs)
+    flat = np.array([o.ravel() for o in obs], dtype=np.float32)
+    return flat
+
+
+def create_manual_video(actor, episode_num):
+    env = pursuit_v4.parallel_env(max_cycles=300, x_size=16, y_size=16, shared_reward=True, n_evaders=30,
+    n_pursuers=8,obs_range=7, n_catch=2, freeze_evaders=False, tag_reward=0.01,
+    catch_reward=5.0, urgency_reward=-0.1, surround=True, constraint_window=1.0)
+
+    env = ss.color_reduction_v0(env, mode='B')
+    # env = ss.resize_v1(env, x_size=165, y_size=165)
+    env = ss.frame_stack_v1(env, 3)
+
+    obs, _ = env.reset()
+    agent_list = env.agents[:]
+    num_agents = len(agent_list)
+
+    frames = []
+    done = False
+
+    while not done:
+        obs_list = [obs[a] for a in agent_list]
+        flat_obs = flatten_obs(obs_list)
+        actions = []
+
+        for i, agent in enumerate(agent_list):
+            if obs[agent] is None:
+                actions.append(0)  # dummy action if done
+            else:
+                obs_tensor = torch.tensor(flat_obs[i:i+1], dtype=torch.float32, device=DEVICE)
+                logits = actor(obs_tensor)
+                dist = torch.distributions.Categorical(logits=logits)
+                action = dist.sample().item()
+                actions.append(action)
+
+        action_dict = {agent_list[i]: actions[i] for i in range(num_agents)}
+        obs, rewards, dones, truncs, infos = env.step(action_dict)
+
+        # Grab frame with render(mode="rgb_array")
+        frame = env.render(mode="rgb_array")
+        if frame is not None:
+            frames.append(frame)
+
+        done = all(dones.values())
+
+    os.makedirs('videos', exist_ok=True)
+    video_path = f'videos/pursuit_episode_{episode_num}.mp4'
+
+    print(f"Saving video with {len(frames)} frames")
+    print([f.shape for f in frames])
+
+    imageio.mimsave(video_path, frames, fps=30)
+    print(f"Video saved to {video_path}")
+
+
 if __name__ == "__main__":
     train()
